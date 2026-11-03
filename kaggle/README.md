@@ -55,6 +55,7 @@ automatically because the attached reference belongs to the bundled audio.
 
 After the main cell finishes, open `/kaggle/working/transcribe_outputs/`:
 
+- `pipeline.log` — full stdout/stderr of the child pipeline process
 - `transcript.json` — real strict-schema pipeline output
 - `processing_report.json` / `.md`
 - `scribe2_reference_strict.json`
@@ -66,6 +67,12 @@ before stopping the notebook.
 
 ## If it fails
 
+- `CalledProcessError ... returned non-zero exit status 1`: this traceback is
+  only the notebook wrapper. The real child-process message is the
+  `Pipeline failed: ...` or `Configuration error: ...` line immediately above
+  it. Use the updated notebook: it prints `pipeline.py --check` first and
+  streams every line of the real run to `/kaggle/working/transcribe_outputs/pipeline.log`.
+  Paste the last ~50 lines of that log when asking for help.
 - `401` / `403` / “gated repo”: accept the license on the model page and make
   sure the Kaggle Secret belongs to the same HF account.
 - `torch.cuda.is_available() == False`: enable GPU in Settings, Internet On,

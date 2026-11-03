@@ -27,7 +27,8 @@ meeting recording into the exact requested `segments[].words[]` JSON:
 Use **[`kaggle/transcribe.ipynb`](kaggle/transcribe.ipynb)**. It has two cells:
 a GPU diagnostic and a main runner. The main cell clones this branch, installs
 the dependencies while preserving Kaggle's CUDA `torch`/`torchaudio`, checks
-your `HF_TOKEN`, runs the bundled MP3, and writes all outputs to
+your `HF_TOKEN`, prints `pipeline.py --check`, streams the real run to
+`pipeline.log`, runs the bundled MP3, and writes all outputs to
 `/kaggle/working/transcribe_outputs/`. See [`kaggle/README.md`](kaggle/README.md)
 for the four Kaggle settings (GPU, Internet, Secret, import notebook). You do
 not need to understand the other files to run it.

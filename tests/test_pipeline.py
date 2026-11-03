@@ -280,6 +280,44 @@ class AssemblyValidationTests(unittest.TestCase):
         self.assertIsNone(words[2].speaker_id)
         self.assertEqual(stats.unattributed_words, 1)
 
+    def test_default_speaker_turn_grouping_keeps_full_speaker_text(self):
+        cfg = make_config(
+            Path("/tmp"),
+            segmentation_mode="speaker-turn",
+            pause_threshold=0.20,
+            max_segment_seconds=0.60,
+        )
+        words = [
+            make_word("આત્મા", 0.00, 0.30, "speaker_0", "c0", 0),
+            make_word("જ્ઞાતા", 1.00, 1.30, "speaker_0", "c1", 1),
+            make_word("છે.", 2.00, 2.30, "speaker_0", "c2", 2),
+            make_word("હા", 2.40, 2.60, "speaker_1", "c3", 3),
+            make_word("જી", 2.70, 2.90, "speaker_1", "c4", 4),
+            make_word("ફરી", 3.00, 3.30, "speaker_0", "c5", 5),
+            make_word("અજ્ઞાત", 3.40, 3.60, None, "c6", 6),
+        ]
+        warnings: list[str] = []
+        segments = group_segments(words, cfg, warnings)
+        self.assertEqual(len(segments), 4)
+        self.assertEqual(
+            [segment["speaker_id"] for segment in segments],
+            ["speaker_0", "speaker_1", "speaker_0", None],
+        )
+        self.assertEqual(segments[0]["text"], "આત્મા જ્ઞાતા છે.")
+        self.assertEqual(segments[1]["text"], "હા જી")
+        # Pause, sentence, chunk and max-duration rules do not apply to turns.
+        self.assertEqual(len(segments[0]["words"]), 3)
+        self.assertGreater(segments[0]["end"] - segments[0]["start"], cfg.max_segment_seconds)
+        legacy = group_segments(
+            words,
+            make_config(Path("/tmp"), segmentation_mode="legacy", check=True),
+            [],
+        )
+        self.assertGreater(len(legacy), len(segments))
+        bad = make_config(Path("/tmp"), segmentation_mode="unknown", check=True)
+        with self.assertRaises(ValueError):
+            bad.validate()
+
     def test_grouping_and_full_validation(self):
         cfg = make_config(Path("/tmp"), pause_threshold=0.7, max_segment_seconds=30.0)
         words = [

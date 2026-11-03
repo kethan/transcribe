@@ -12,6 +12,8 @@ meeting recording into the exact requested `segments[].words[]` JSON:
 - **CTC forced alignment** supplies real word start/end times when Bodhan's
   response does not include them.
 - Every word gets a deterministic `speaker_id` or `null`.
+- No meeting transcript text is hardcoded: final text comes only from the
+  configured ASR response/cache. ElevenLabs Scribe 2 is a reference only.
 - The final JSON is validated before export; a separate processing report is
   written.
 
@@ -28,8 +30,10 @@ Use **[`kaggle/transcribe.ipynb`](kaggle/transcribe.ipynb)**. It has two cells:
 a GPU diagnostic and a main runner. The main cell clones this branch, installs
 the dependencies while preserving Kaggle's CUDA `torch`/`torchaudio`, checks
 your `HF_TOKEN`, prints `pipeline.py --check`, streams the real run to
-`pipeline.log`, runs the bundled MP3, and writes all outputs to
-`/kaggle/working/transcribe_outputs/`. See [`kaggle/README.md`](kaggle/README.md)
+`pipeline.log`, runs the bundled MP3 with full speaker-turn segments, and writes
+`transcript.json` plus the actual `bodhan_transcript.txt`/`.json` and Scribe 2
+references to `/kaggle/working/transcribe_outputs/`. See
+[`kaggle/README.md`](kaggle/README.md)
 for the four Kaggle settings (GPU, Internet, Secret, import notebook). You do
 not need to understand the other files to run it.
 
@@ -74,6 +78,7 @@ gujarati_pipeline/
   config.py          env/CLI config, cache digests, validation
   audio.py           ffmpeg/copy to canonical 16 kHz mono WAV, silence-aware chunks
   bodhan.py          optional documented cloud API client + response parser
+  bodhan_text.py     writes verbatim Bodhan ASR text as TXT/JSON reference
   transcription.py   local HF ASR (default), optional cloud backend, shared cache
   diarization.py     NVIDIA NeMo Sortformer load/infer/parse/cache
   ctc.py             self-contained NumPy CTC Viterbi + word spans
@@ -82,7 +87,9 @@ gujarati_pipeline/
   validation.py      final JSON schema/text/timestamp/speaker validation
   pipeline.py        7-stage orchestration, progress, reports, failure handling
 tests/test_pipeline.py  offline unit tests (no API/GPU/model weights needed)
+tools/bodhan_reference.py  export real Bodhan text from v2 response cache
 tools/scribe2_reference.py  strict-schema conversion + ElevenLabs Scribe 2 verification
+tools/scribe2_speaker_turns.py  full speaker-turn Scribe 2 reference (extra fields kept)
 docs/VERIFICATION.md   detailed API/model research and limitations
 requirements.txt       pinned Python dependencies
 .env.example           environment variable names (no secrets)
@@ -188,6 +195,7 @@ credential is stored in code, cache metadata, or reports.
 | `MMS_ALIGN_MODEL` | no | default MMS CTC checkpoint |
 | `GUJARATI_ALIGN_MODEL` | no | `gchhablani/wav2vec2-large-xlsr-gu` |
 | `PIPELINE_DEVICE` | no | `auto`, `cuda`, or `cpu` |
+| `SEGMENTATION_MODE` | no | `speaker-turn` (default) or `legacy` |
 
 Optional verification before a long run:
 
@@ -211,7 +219,8 @@ python pipeline.py \
 ```
 
 `python -m gujarati_pipeline` is an equivalent entry point. The command writes
-`outputs/transcript.json`, `outputs/processing_report.json`, and
+`outputs/transcript.json`, `outputs/bodhan_transcript.txt`,
+`outputs/bodhan_transcript.json`, `outputs/processing_report.json`, and
 `outputs/processing_report.md`. `--output path/to/file.json` overrides the final
 JSON path directly. No `BODHAN_API_KEY` is used.
 
@@ -275,8 +284,11 @@ python -m tools.scribe2_reference verify \
 | Path | Content |
 | --- | --- |
 | `outputs/transcript.json` | final UTF-8 JSON, exactly `{"segments": [...]}` |
+| `outputs/bodhan_transcript.txt` | verbatim Bodhan ASR text from this run, for download |
+| `outputs/bodhan_transcript.json` | same text with chunk spans and provenance |
 | `outputs/processing_report.json` | detailed per-stage report and warnings |
 | `outputs/processing_report.md` | brief report with required metrics |
+| `outputs/scribe2_speaker_turns.json` | optional ElevenLabs reference view, not strict output |
 
 `work/` holds organised intermediates:
 
@@ -293,6 +305,30 @@ Caches are keyed by the original audio SHA-256 plus stage configuration
 model/language). Re-run without `--force` to reuse valid results. `--force all`
 recomputes every stage; `--force transcription,alignment` recomputes only those
 stages. `--transcription-cache-only` requires cached ASR text for every chunk.
+
+## No hardcoded transcript; Bodhan text reference
+
+`pipeline.py` writes `bodhan_transcript.txt` and `bodhan_transcript.json` from
+the live Bodhan ASR responses immediately after transcription. These files are
+for reference/download only: no diarization, CTC times, ElevenLabs text or
+manually typed transcript is added. This repository cannot contain an actual
+Bodhan transcript until the gated model has been run; the sandbox has not
+fabricated one.
+
+To recover the same files from a preserved v2 cache (for example, a Kaggle
+`/kaggle/working/transcribe/work` directory), use:
+
+```bash
+python -m tools.bodhan_reference \
+  --work-dir work \
+  --report outputs/processing_report.json \
+  --output-txt outputs/bodhan_transcript.txt \
+  --output-json outputs/bodhan_transcript.json
+```
+
+If there are multiple cache groups, run `python -m tools.bodhan_reference
+--list-groups --work-dir work` and pass the matching `--config-digest`. The
+exporter refuses to mix different ASR runs.
 
 ## Pipeline stages
 
@@ -320,8 +356,9 @@ stages. `--transcription-cache-only` requires cached ASR text for every chunk.
 6. **Assembly:** for each word, sums overlap with each speaker's merged
    intervals. Winner must cover at least `--speaker-min-coverage` (default 0.5)
    and beat the runner-up by `--speaker-ambiguity-margin` (default 0.1), else
-   `speaker_id=null`. Groups words on speaker change, pause, ASR
-   chunk/segment boundary, sentence-ending punctuation, or max segment length.
+   `speaker_id=null`. Default `speaker-turn` grouping keeps all consecutive
+   words from one speaker in one segment, like the ElevenLabs sample. `--segmentation-mode legacy`
+   restores the earlier pause/chunk/sentence/max-duration splits.
 7. **Validation/export:** checks exact schema keys, finite chronological
    timestamps within duration, `start < end`, `type: "word"`, segment/word text
    consistency, Unicode preservation (no U+FFFD), no dropped characters,
@@ -334,7 +371,9 @@ Useful overrides:
 --asr-compute-dtype bfloat16
 --alignment-model auto                 # try Gujarati CTC first, fall back to MMS+uroman
 --alignment-model gujarati-wav2vec2     # pure Gujarati only; OOV is a hard failure
---pause-threshold 0.7                   # meaningful pause
+--segmentation-mode speaker-turn        # default: one full segment per speaker run
+--segmentation-mode legacy              # opt into pause/chunk/sentence splitting
+--pause-threshold 0.7                   # meaningful pause in legacy mode
 --speaker-min-coverage 0.5              # confidence threshold
 --speaker-ambiguity-margin 0.1          # tie/ambiguity threshold
 --bodhan-workers 2                     # cloud backend only; keep within rate limits
@@ -351,20 +390,24 @@ weights, NeMo, Transformers, or a GPU:
 python -m unittest discover -s tests -v
 ```
 
-18 tests cover: PCM16 WAV round-trip, silence-aware chunk offsets, documented
+25 tests cover: PCM16 WAV round-trip, silence-aware chunk offsets, documented
 and optional Bodhan response parsing, local HF backend selection/caching with a
 fake ASR wrapper (no cloud key required), CTC Viterbi collapse/word spans,
 uroman normalization and explicit token merging, Gujarati OOV detection,
-deterministic speaker overlap/tie handling, segment grouping, final JSON
-validation (including dropped-word detection), and ElevenLabs Scribe 2 strict
-conversion/verification.
+deterministic speaker overlap/tie handling, default speaker-turn grouping,
+legacy grouping, verbatim Bodhan text/cache references, final JSON validation
+(including dropped-word detection), and ElevenLabs Scribe 2 strict
+conversion/speaker-turn preservation/verification.
 
 ## Attached MP3 / ElevenLabs Scribe 2 reference
 
 The repository contains an MP3 and a companion JSON with ElevenLabs Scribe 2
-word/segment metadata. That JSON is **not** a Bodhan, NeMo or pipeline result.
-I added `tools/scribe2_reference.py` to convert it into the exact strict schema
-and to verify a future pipeline JSON against it.
+word/segment metadata. That JSON is **not** a Bodhan, NeMo or pipeline result,
+and its text is never copied into the final output. I added
+`tools/scribe2_reference.py` to convert it into the exact strict schema and to
+verify a future pipeline JSON against it. `tools/scribe2_speaker_turns.py`
+provides a separate full speaker-turn view that keeps Scribe 2's extra word
+fields; it is not the strict final schema.
 
 Measured with `mutagen`: the MP3 is **4538.6265625 s**, 48 kHz mono. The sample
 JSON has 265 segments and 12,827 objects: 6,520 `word`, 6,281 `spacing`, and 26
@@ -386,12 +429,18 @@ the next real interval boundary from the same source response (no timestamp is
 invented). This is a **schema conversion of the attached reference**, not an
 independent ASR/diarization run.
 
-Create it again:
+Create both reference views again:
 
 ```bash
 pip install -r tools/requirements.txt   # optional: mutagen for MP3 duration
 python -m tools.scribe2_reference convert
+python -m tools.scribe2_speaker_turns
 ```
+
+`scribe2_speaker_turns.json` preserves every original Scribe 2 word object,
+including `spacing`, `audio_event`, `logprob`, `characters`, and
+`channel_index`. The strict `transcript.json` still permits only `text`,
+`start`, `end`, `type`, and `speaker_id` on words, with `type: "word"`.
 
 After a real pipeline run produces `outputs/transcript.json`, verify it:
 

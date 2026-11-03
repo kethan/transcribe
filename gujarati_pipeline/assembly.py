@@ -148,18 +148,28 @@ def _segment_from_words(words: list[AlignedWord]) -> dict[str, Any]:
     }
 
 
-def group_segments(
-    words: list[AlignedWord],
-    config: Config,
-    warnings: list[str],
+def _group_by_speaker_turn(ordered: list[AlignedWord]) -> list[dict[str, Any]]:
+    """One segment per consecutive speaker run, with no duration/pause splitting.
+
+    A run with ``speaker_id=None`` is kept as its own unattributed segment; no
+    speaker label is invented for words that diarization could not assign.
+    """
+    segments: list[dict[str, Any]] = []
+    current: list[AlignedWord] = []
+    for word in ordered:
+        if current and word.speaker_id != current[-1].speaker_id:
+            segments.append(_segment_from_words(current))
+            current = []
+        current.append(word)
+    if current:
+        segments.append(_segment_from_words(current))
+    return segments
+
+
+def _group_legacy(
+    ordered: list[AlignedWord], config: Config
 ) -> list[dict[str, Any]]:
-    """Group consecutive words; never create one segment per word."""
-    ordered = sorted(words, key=lambda w: (w.start, w.end, w.original_order))
-    if [w.original_order for w in ordered] != [w.original_order for w in words]:
-        warnings.append(
-            "Words were reordered into chronological timeline order; overlapping-speech "
-            "segments may therefore differ from Bodhan's textual order."
-        )
+    """Original finer-grained grouping with pause/sentence/chunk boundaries."""
     segments: list[dict[str, Any]] = []
     current: list[AlignedWord] = []
     for word in ordered:
@@ -191,6 +201,28 @@ def group_segments(
     if current:
         segments.append(_segment_from_words(current))
     return segments
+
+
+def group_segments(
+    words: list[AlignedWord],
+    config: Config,
+    warnings: list[str],
+) -> list[dict[str, Any]]:
+    """Group consecutive words; never create one segment per word.
+
+    The default ``speaker-turn`` mode matches the ElevenLabs reference shape:
+    each segment's ``text`` holds the full text of one speaker before the next
+    speaker's segment begins. ``legacy`` retains the earlier short-segment rules.
+    """
+    ordered = sorted(words, key=lambda w: (w.start, w.end, w.original_order))
+    if [w.original_order for w in ordered] != [w.original_order for w in words]:
+        warnings.append(
+            "Words were reordered into chronological timeline order; overlapping-speech "
+            "segments may therefore differ from Bodhan's textual order."
+        )
+    if config.segmentation_mode == "speaker-turn":
+        return _group_by_speaker_turn(ordered)
+    return _group_legacy(ordered, config)
 
 
 @dataclass

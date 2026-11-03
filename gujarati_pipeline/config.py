@@ -55,7 +55,9 @@ class Config:
     compute_dtype: str = "float32"
     star_penalty: float = 0.0
 
-    # Assembly / confidence.
+    # Assembly / confidence. "speaker-turn" keeps every consecutive run of
+    # words from one speaker together, like the ElevenLabs reference sample.
+    segmentation_mode: str = "speaker-turn"  # speaker-turn | legacy
     pause_threshold: float = 0.70
     max_segment_seconds: float = 30.0
     speaker_min_coverage: float = 0.50
@@ -191,6 +193,8 @@ class Config:
             raise ValueError("--speaker-min-coverage must be in [0, 1]")
         if not 0.0 <= self.speaker_ambiguity_margin < 1.0:
             raise ValueError("--speaker-ambiguity-margin must be in [0, 1)")
+        if self.segmentation_mode not in {"speaker-turn", "legacy"}:
+            raise ValueError("--segmentation-mode must be speaker-turn or legacy")
         if self.pause_threshold < 0:
             raise ValueError("--pause-threshold must be >= 0")
         if self.max_segment_seconds <= 0:
@@ -255,6 +259,7 @@ class Config:
             ),
             compute_dtype=pick("compute_dtype", None, "float32"),
             star_penalty=float(pick("star_penalty", None, 0.0)),
+            segmentation_mode=pick("segmentation_mode", "SEGMENTATION_MODE", "speaker-turn"),
             pause_threshold=float(pick("pause_threshold", None, 0.70)),
             max_segment_seconds=float(pick("max_segment_seconds", None, 30.0)),
             speaker_min_coverage=float(pick("speaker_min_coverage", None, 0.50)),

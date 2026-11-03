@@ -23,13 +23,13 @@ def synthetic_reference() -> dict[str, Any]:
     return {
         "segments": [
             {
-                "text": "નમસ્તે દુનિયા. [खँखार] 11",
+                "text": "નમસ્તે દુનિયા. [noise] 11",
                 "words": [
                     obj("નમસ્તે", 0.10, 0.50, "word"),
                     obj(" ", 0.50, 0.60, "spacing"),
                     obj("દુનિયા.", 0.60, 0.60, "word"),  # zero duration in the sample
                     obj(" ", 0.60, 0.70, "spacing"),
-                    obj("[खँखार]", 0.70, 1.00, "audio_event"),
+                    obj("[noise]", 0.70, 1.00, "audio_event"),
                     obj(" ", 1.00, 1.10, "spacing"),
                     obj("11", 1.10, 1.30, "word", "speaker_1"),
                 ],

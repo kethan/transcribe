@@ -16,6 +16,7 @@ from .audio import (
     prepare_canonical_audio,
     read_pcm16_wav,
 )
+from .bodhan_text import write_bodhan_reference
 from .config import Config
 from .transcription import create_transcriber
 from .diarization import run_diarization, verify_environment
@@ -248,6 +249,9 @@ def run(config: Config) -> dict[str, Any]:
         print(f"\n[3/7] Bodhan transcription ({config.asr_backend})")
         transcriber = create_transcriber(config, samples, warnings)
         chunks = transcriber.transcribe(spans)
+        bodhan_text_path, bodhan_text_json_path, bodhan_text_reference = (
+            write_bodhan_reference(chunks, config)
+        )
         source_text = _source_text(chunks)
         expected_words = _expected_word_count(chunks)
         bodhan_word_chunks = sum(1 for c in chunks if c.has_word_times)
@@ -262,6 +266,10 @@ def run(config: Config) -> dict[str, Any]:
         print(
             f"[ASR] {len(chunks)} chunk(s), {expected_words} whitespace token(s); "
             f"word-time source: {ts_source}"
+        )
+        print(
+            f"[ASR] Bodhan text reference: {bodhan_text_path} "
+            f"(+ {bodhan_text_json_path.name})"
         )
 
         stage = "nemo-diarization"
@@ -336,6 +344,10 @@ def run(config: Config) -> dict[str, Any]:
                     "word_timestamp_source": ts_source,
                     "chunks_with_asr_word_times": bodhan_word_chunks,
                     "source_text_characters": len(source_text),
+                    "text_reference_txt": str(bodhan_text_path),
+                    "text_reference_json": str(bodhan_text_json_path),
+                    "text_reference_characters": bodhan_text_reference["text_characters"],
+                    "text_reference_sha256": bodhan_text_reference["text_sha256"],
                 },
                 "diarization": {
                     "speaker_count": len(speaker_ids),
@@ -363,9 +375,11 @@ def run(config: Config) -> dict[str, Any]:
             },
         )
         _write_report(config, report, final_json_written=True)
-        print(f"[Export] Final JSON: {config.output}")
-        print(f"[Export] Report:     {config.report_json}")
-        print(f"[Export] Report MD:  {config.report_md}")
+        print(f"[Export] Final JSON:         {config.output}")
+        print(f"[Export] Bodhan text (TXT): {bodhan_text_path}")
+        print(f"[Export] Bodhan text (JSON):{bodhan_text_json_path}")
+        print(f"[Export] Report:             {config.report_json}")
+        print(f"[Export] Report MD:          {config.report_md}")
         print(
             f"[Summary] duration={info.duration:.2f}s speakers={len(speaker_ids)} "
             f"segments={summary['segments']} words={summary['words']} "

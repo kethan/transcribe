@@ -29,14 +29,16 @@ the main runner. You do not need to understand `gujarati_pipeline/`, `tools/`,
 It clones `arena/793a5a3b-transcribe` into `/kaggle/working/transcribe`,
 installs `requirements.txt` and `tools/requirements.txt` while pinning
 Kaggle's preinstalled CUDA `torch`/`torchaudio`, checks your HF gate, uses the
-bundled `audio/*.mp3` and `audio/*.json`, runs `pipeline.py`, and writes
-everything to `/kaggle/working/transcribe_outputs/`. It refuses to continue if
+bundled `audio/*.mp3` and `audio/*.json`, runs `pipeline.py` with full
+speaker-turn segments, and writes everything to
+`/kaggle/working/transcribe_outputs/`. It refuses to continue if
 `torch.cuda.is_available()` is false after installation.
 
 The first execution can take a long time: it downloads the ~4.9 GB Bodhan ASR
 checkpoint, the Nemotron diarization checkpoint, and the MMS alignment
-checkpoint. It also verifies `outputs/transcript.json` against the converted
-ElevenLabs Scribe 2 reference.
+checkpoint. It also verifies `transcript.json` against the converted ElevenLabs
+Scribe 2 reference. No transcript text is hardcoded; the final words come from
+the gated Bodhan model's responses, and ElevenLabs Scribe 2 is reference only.
 
 ## Only two values to edit
 
@@ -56,14 +58,24 @@ automatically because the attached reference belongs to the bundled audio.
 After the main cell finishes, open `/kaggle/working/transcribe_outputs/`:
 
 - `pipeline.log` — full stdout/stderr of the child pipeline process
-- `transcript.json` — real strict-schema pipeline output
+- `transcript.json` — real strict-schema pipeline output, grouped as full speaker turns
+- `bodhan_transcript.txt` — verbatim actual Bodhan ASR text, for download
+- `bodhan_transcript.json` — same text with chunk spans and provenance
 - `processing_report.json` / `.md`
 - `scribe2_reference_strict.json`
 - `scribe2_conversion_report.json` / `.md`
+- `scribe2_speaker_turns.json` / `scribe2_speaker_turns_report.md`
 - `scribe2_verification_report.json` / `.md`
 
 Kaggle keeps `/kaggle/working` for the session; download the output directory
 before stopping the notebook.
+
+The notebook also re-exports the Bodhan text from
+`/kaggle/working/transcribe/work/transcription/responses/` with
+`python -m tools.bodhan_reference`, so a preserved ASR cache can recover the
+downloadable TXT/JSON reference without rerunning the model. The separate
+`scribe2_speaker_turns.json` keeps ElevenLabs' extra word fields; the strict
+`transcript.json` does not.
 
 ## If it fails
 

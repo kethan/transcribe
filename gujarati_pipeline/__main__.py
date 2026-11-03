@@ -117,8 +117,17 @@ def build_parser() -> argparse.ArgumentParser:
     align.add_argument("--star-penalty", type=float, default=None, help="Penalty for the CTC <star> edge token.")
 
     assembly = p.add_argument_group("Speaker assignment / grouping")
-    assembly.add_argument("--pause-threshold", type=float, default=None, help="Meaningful pause in seconds.")
-    assembly.add_argument("--max-segment-seconds", type=float, default=None, help="Maximum grouped segment duration.")
+    assembly.add_argument(
+        "--segmentation-mode",
+        default=None,
+        choices=["speaker-turn", "legacy"],
+        help=(
+            "speaker-turn keeps all consecutive words from one speaker in a single segment; "
+            "legacy also splits on pauses, sentence ends, ASR chunks and max duration."
+        ),
+    )
+    assembly.add_argument("--pause-threshold", type=float, default=None, help="Meaningful pause in seconds (legacy mode).")
+    assembly.add_argument("--max-segment-seconds", type=float, default=None, help="Maximum grouped segment duration (legacy mode).")
     assembly.add_argument("--speaker-min-coverage", type=float, default=None, help="Min winner overlap / word duration.")
     assembly.add_argument("--speaker-ambiguity-margin", type=float, default=None, help="Runner-up tie threshold (0-1).")
     return p

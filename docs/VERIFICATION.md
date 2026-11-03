@@ -205,13 +205,10 @@ Verified from its `config.json`, `tokenizer_config.json` and `vocab.json`:
   synthetic `<star>` column, and maps character spans back to the **original**
   words.
 
-uroman was installed and tested locally:
-
-```text
-આત્મા જ્ઞાતા છે.       -> aatmaa jnyaataa che.
-आत्मा ज्ञाता है।       -> aatmaa jnyaataa hai.
-सम्यक्त्व ના પચ્ચીસ દોષ  -> samyaktva naa pacciis doss ...
-```
+uroman was installed and tested locally with short synthetic Gujarati,
+Devanagari and Latin phrases to confirm `[a-z' ]` normalization. Those smoke-test
+strings are not meeting transcript text; no transcript is stored in the
+pipeline code.
 
 This gives one CTC alphabet that covers Gujarati, Devanagari and Latin script
 after romanization. The original Bodhan word strings are preserved; only the
@@ -255,9 +252,12 @@ estimated from sentence duration. NeMo intervals may overlap; the assignment
 sums each speaker's merged interval overlap with each word, ranks by
 `(-overlap, earliest interval start, speaker_id)`, and returns `null` when the
 winner covers less than `--speaker-min-coverage` or the runner-up is within
-`--speaker-ambiguity-margin`. Segment grouping breaks on speaker change,
-Bodhan chunk/segment boundary, meaningful pause, sentence-ending punctuation,
-or `--max-segment-seconds`; it never creates one segment per word.
+`--speaker-ambiguity-margin`. The default `speaker-turn` grouping keeps every
+consecutive run of words from one speaker in a single segment; a `null`
+attribution run is kept separately. It never creates one segment per word and
+does not split on pauses, sentence punctuation, ASR chunks or duration. Pass
+`--segmentation-mode legacy` to restore those earlier boundaries, including
+`--max-segment-seconds`.
 
 ## 5. Explicit limitations
 
@@ -283,3 +283,28 @@ or `--max-segment-seconds`; it never creates one segment per word.
   schema) and Hindi text. `tools/scribe2_reference.py` converts it to the
   strict schema only as a later verification reference; it is never used as a
   source of Bodhan text, timestamps, or speaker IDs for a pipeline run.
+  `tools/scribe2_speaker_turns.py` keeps a separate speaker-turn view with all
+  ElevenLabs fields intact. Neither file is the final strict `transcript.json`.
+
+## 6. No hardcoded transcript, and downloadable Bodhan text
+
+No meeting transcript text is embedded in the pipeline, tests, notebook or
+documentation. The final transcript's words come from the configured Bodhan ASR
+response or its v2 cache; NeMo supplies speaker intervals and CTC supplies word
+times. The attached ElevenLabs Scribe 2 JSON is a separate comparison reference,
+never pipeline input. Short synthetic strings in tests/docs exercise romanization
+and Unicode handling only.
+
+After a real run, `pipeline.py` automatically writes
+`bodhan_transcript.txt` and `bodhan_transcript.json` beside `transcript.json`.
+The TXT contains raw Bodhan response text in audio-span order; the JSON adds
+chunk offsets, backend/model/language and a SHA-256 of the text. They have no
+speaker labels and no CTC word timestamps. `python -m tools.bodhan_reference`
+can recover the same downloadable files from `work/transcription/responses/`.
+It selects exactly one backend/config-digest group and refuses to mix runs.
+
+The final strict JSON still has exactly these word keys: `text`, `start`, `end`,
+`type`, `speaker_id`, with `type: "word"`. The final segments now follow full
+speaker turns, but no Scribe 2 `spacing`, `audio_event`, `logprob`, `characters`
+or `channel_index` fields are copied into it. Those fields live only in the
+separate `outputs/scribe2_speaker_turns.json` reference artifact.

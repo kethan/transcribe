@@ -1,0 +1,14 @@
+# Generated pipeline artifacts (keep the repository source clean)
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+work/
+outputs/
+intermediates/
+*.log
+
+# Kaggle / notebook scratch
+.kaggle/
+.ipynb_checkpoints/

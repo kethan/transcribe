@@ -110,12 +110,14 @@ chosen pretrained model is
 loaded through NeMo's `SortformerEncLabelModel`.
 
 Verified from the model card, the [NVIDIA blog](https://huggingface.co/blog/nvidia/nemotron-diarization),
-[NeMo Speech docs](https://docs.nvidia.com/nemo/speech/nightly/), and the
-`nemo-toolkit==3.0.0` wheel source:
+[NeMo Speech docs](https://docs.nvidia.com/nemo/speech/nightly/), the
+`nemo-toolkit==3.0.0` wheel source, and the pinned `NVIDIA-NeMo/Speech` main
+commit `e5d79d5a49cbec49d79440b0070aac0c32a8dbb8`:
 
 | Item | Verified value |
 | --- | --- |
-| Runtime | NeMo Framework / Speech v3.0; `nemo-toolkit[asr]==3.0.0` on PyPI |
+| Runtime | NeMo Speech built from the pinned GitHub main commit; **not** PyPI `nemo-toolkit[asr]==3.0.0` |
+| Why not PyPI 3.0.0 | Nemotron-3-Diarization uses a 31-layer RoPE encoder, but PyPI 3.0.0's `TransformerEncoder` accepts only `abs_pos`, `rel_pos`, `no_pos`. Instantiation fails with `self_attention_model='rope' is not supported`. The pinned GitHub commit adds `rope` to `_SUPPORTED_SELF_ATTENTION_MODELS`. |
 | Python / torch | documentation requires Python 3.12+ and PyTorch 2.7+; GPU/CUDA recommended |
 | Model class | `nemo.collections.asr.models.SortformerEncLabelModel` |
 | Load | `SortformerEncLabelModel.from_pretrained("nvidia/Nemotron-3-Diarization")`; HF token may be required |
@@ -124,7 +126,10 @@ Verified from the model card, the [NVIDIA blog](https://huggingface.co/blog/nvid
 | Overlap | per-speaker activity intervals can overlap; all reported DER evaluations include overlapping speech |
 | Frame | 10 ms output resolution, 80 ms encoder frames |
 | Offline config (80 ms frames) | `spkcache_len=264`, `fifo_len=40`, `chunk_len=340`, `chunk_right_context=40`, `spkcache_update_period=300`; call `_check_streaming_parameters()` |
-| `diarize()` return in 3.0.0 | a list of lists of strings such as `"0.500 3.120 speaker_0"`; the model card also describes `(begin_seconds, end_seconds, speaker_index)` |
+| `diarize()` return | a list of lists of strings such as `"0.500 3.120 speaker_0"`; the model card also describes `(begin_seconds, end_seconds, speaker_index)` |
+
+`verify_environment()` now inspects the installed `TransformerEncoder` and
+fails early when `rope` is missing, before downloading/running the ASR chunks.
 
 The implementation parses both shapes, clips intervals to the recording
 duration, keeps overlapping intervals from different speakers, and maps the

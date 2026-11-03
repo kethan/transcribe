@@ -67,6 +67,12 @@ before stopping the notebook.
 
 ## If it fails
 
+- `self_attention_model='rope' is not supported` / `Model instantiation failed`:
+  you have PyPI `nemo-toolkit[asr]==3.0.0`. Nemotron-3-Diarization needs the
+  RoPE-capable NeMo Speech main build. `requirements.txt` now pins GitHub
+  commit `e5d79d5a49cbec49d79440b0070aac0c32a8dbb8`. Restart the session,
+  reinstall from the updated `requirements.txt`, and re-run. The pipeline's
+  `--check` now detects this before the ASR stage.
 - `CalledProcessError ... returned non-zero exit status 1`: this traceback is
   only the notebook wrapper. The real child-process message is the
   `Pipeline failed: ...` or `Configuration error: ...` line immediately above

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import inspect
 import json
 import math
 import os
@@ -20,6 +22,36 @@ OFFLINE_SORTFORMER_PARAMS = {
     "chunk_right_context": 40,
     "spkcache_update_period": 300,
 }
+
+# Pinned GitHub commit of NVIDIA-NeMo/Speech whose TransformerEncoder supports
+# self_attention_model='rope'. PyPI nemo-toolkit[asr]==3.0.0 does not.
+NEMO_ROPE_COMMIT = "e5d79d5a49cbec49d79440b0070aac0c32a8dbb8"
+NEMO_ROPE_INSTALL = (
+    "nemo-toolkit[asr] @ "
+    f"git+https://github.com/NVIDIA-NeMo/Speech.git@{NEMO_ROPE_COMMIT}"
+)
+
+
+def nemo_rope_support() -> tuple[bool | None, str]:
+    """Return (supports_rope, note) for the installed NeMo TransformerEncoder."""
+    module_name = "nemo.collections.asr.modules.transformer_encoder"
+    try:
+        module = importlib.import_module(module_name)
+    except Exception as exc:
+        return None, f"could not import {module_name}: {exc}"
+    supported = getattr(module, "_SUPPORTED_SELF_ATTENTION_MODELS", None)
+    if supported is not None:
+        modes = tuple(str(mode) for mode in supported)
+        return "rope" in modes, f"supported self-attention modes: {modes}"
+    try:
+        source = inspect.getsource(module.TransformerEncoder.__init__)
+    except Exception as exc:
+        return None, f"could not inspect TransformerEncoder.__init__: {exc}"
+    has_rope = "'rope'" in source or '"rope"' in source
+    return has_rope, (
+        "inspected TransformerEncoder.__init__ for 'rope' support; "
+        f"rope_literal_found={has_rope}"
+    )
 
 
 def verify_environment(config: Config, info: AudioInfo | None = None) -> dict[str, Any]:
@@ -52,8 +84,23 @@ def verify_environment(config: Config, info: AudioInfo | None = None) -> dict[st
         result["sortformer_class_available"] = False
         result["errors"].append(
             "nemo.collections.asr.models.SortformerEncLabelModel could not be imported. "
-            "Install nemo-toolkit[asr]==3.0.0 (or the matching NeMo Speech 3.0 build). "
+            f"Install the pinned NeMo Speech build ({NEMO_ROPE_INSTALL}). "
             f"Import error: {exc}"
+        )
+    rope_ok, rope_note = nemo_rope_support()
+    result["nemo_rope_support"] = rope_ok
+    result["nemo_rope_note"] = rope_note
+    result["nemo_rope_required_commit"] = NEMO_ROPE_COMMIT
+    if rope_ok is False:
+        result["errors"].append(
+            "Installed NeMo does not support self_attention_model='rope', which "
+            "nvidia/Nemotron-3-Diarization requires. PyPI nemo-toolkit[asr]==3.0.0 "
+            f"is too old; install {NEMO_ROPE_INSTALL}. {rope_note}."
+        )
+    elif rope_ok is None:
+        result["warnings"].append(
+            f"Could not conclusively verify NeMo RoPE support: {rope_note}. "
+            f"If diarization fails with 'rope is not supported', install {NEMO_ROPE_INSTALL}."
         )
     if info is not None:
         if info.sample_rate != 16000 or info.channels != 1 or info.sample_width_bytes != 2:
@@ -233,9 +280,11 @@ def run_diarization(
         raise
     except Exception as exc:
         raise StageError(
-            "NVIDIA NeMo diarization failed. Verify nemo-toolkit[asr]==3.0.0, "
-            "a CUDA-enabled torch>=2.7 build, the 16 kHz mono WAV, and HF_TOKEN/access "
-            f"to {config.diar_model}. Original error: {exc}"
+            "NVIDIA NeMo diarization failed. Verify a CUDA-enabled torch>=2.7 build, "
+            "the 16 kHz mono WAV, HF_TOKEN/access to "
+            f"{config.diar_model}, and the pinned NeMo Speech build with RoPE support "
+            f"({NEMO_ROPE_INSTALL}). PyPI nemo-toolkit[asr]==3.0.0 is too old for this "
+            f"checkpoint. Original error: {exc}"
         ) from exc
 
     try:

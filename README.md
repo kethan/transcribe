@@ -45,10 +45,13 @@ not need to understand the other files to run it.
    multipart `file`, `model=indic-transcribe`, optional `language`, bearer auth,
    ≤ 30 s per request, documented 200 response `{"text": "..."}`. No documented
    `segments`, `words`, word timestamps, or `response_format` fields. [API docs](https://console.bodhan.ai/api-docs/) · [official notebook](https://github.com/Bodhan-AI/Bodhan-AI-Cookbook/blob/main/getting-started/speech-to-text/speech_to_text.ipynb)
-3. **NeMo:** `nemo-toolkit[asr]==3.0.0` exposes
-   `SortformerEncLabelModel`; `nvidia/Nemotron-3-Diarization` expects 16 kHz
-   mono audio, supports up to 8 speakers and overlapping activity, and uses the
-   documented 30.4 s offline configuration. [Model card](https://huggingface.co/nvidia/Nemotron-3-Diarization) · [NVIDIA blog](https://huggingface.co/blog/nvidia/nemotron-diarization)
+3. **NeMo:** `SortformerEncLabelModel` loads
+   `nvidia/Nemotron-3-Diarization`; it expects 16 kHz mono audio, supports up to
+   8 speakers and overlapping activity, and uses the documented 30.4 s offline
+   configuration. **PyPI `nemo-toolkit[asr]==3.0.0` cannot instantiate this
+   checkpoint** because the checkpoint requires a RoPE encoder and that release
+   supports only `abs_pos`, `rel_pos`, `no_pos`. The pinned `NVIDIA-NeMo/Speech`
+   main commit in `requirements.txt` adds `rope` support. [Model card](https://huggingface.co/nvidia/Nemotron-3-Diarization) · [NVIDIA blog](https://huggingface.co/blog/nvidia/nemotron-diarization)
 4. **Alignment:** Bodhan has no word timestamps, so forced alignment is
    required. `gchhablani/wav2vec2-large-xlsr-gu` has an 80-column Gujarati
    character vocabulary with blank `[PAD]` id 79 and no Latin, Devanagari,
@@ -92,7 +95,9 @@ Python 3.12+ GPU Kaggle image / container. Kaggle normally ships a matching
 CUDA-enabled `torch`; verify it rather than replacing it with a CPU wheel.
 `torchaudio` is deliberately unpinned so `pip` cannot force a newer `torch`
 that breaks that pair. The Kaggle notebook pins both packages with a generated
-constraints file.
+constraints file. Do **not** install `nemo-toolkit[asr]==3.0.0` from PyPI: it
+lacks the RoPE encoder needed by Nemotron-3-Diarization. Use the pinned GitHub
+main commit in `requirements.txt`.
 
 ```bash
 # System audio tools
@@ -104,7 +109,7 @@ pip install -q "numpy>=1.26,<3" "requests>=2.32,<3" "uroman==1.3.1.1"
 pip install -q "huggingface_hub>=0.34,<2" "sentencepiece>=0.2,<0.3" "soundfile>=0.12,<0.14"
 pip install -q "torchaudio" "transformers==4.57.6"
 pip install -q "Cython" "packaging"
-pip install -q "nemo-toolkit[asr]==3.0.0"
+pip install -q "nemo-toolkit[asr] @ git+https://github.com/NVIDIA-NeMo/Speech.git@e5d79d5a49cbec49d79440b0070aac0c32a8dbb8"
 
 # Verify the preinstalled torch build:
 python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
@@ -233,9 +238,10 @@ python pipeline.py --audio meeting.wav --asr-backend cloud --language gu --outpu
 
 ## Test on the bundled MP3 end-to-end
 
-Prerequisites: a Python **3.12+ GPU** environment, `torch>=2.7`,
-`nemo-toolkit[asr]==3.0.0`, the other `requirements.txt` packages, and gated
-HF access from the steps above. The bundled MP3 is ~75.6 minutes, so the first
+Prerequisites: a Python **3.12+ GPU** environment, `torch>=2.7`, the pinned
+RoPE-capable `NVIDIA-NeMo/Speech` build from `requirements.txt`, the other
+`requirements.txt` packages, and gated HF access from the steps above. The
+bundled MP3 is ~75.6 minutes, so the first
 run downloads the Bodhan ASR checkpoint, the Nemotron diarization checkpoint,
 and the MMS alignment checkpoint; allow substantial time and GPU memory.
 
@@ -442,7 +448,8 @@ accuracy.
 - [Bodhan AI Cookbook — speech to text](https://github.com/Bodhan-AI/Bodhan-AI-Cookbook)
 - [NVIDIA Nemotron-3-Diarization model card](https://huggingface.co/nvidia/Nemotron-3-Diarization)
 - [NVIDIA Nemotron 3 Diarization blog](https://huggingface.co/blog/nvidia/nemotron-diarization)
-- [NeMo Speech 3.0 on PyPI](https://pypi.org/project/nemo-toolkit/3.0.0/)
+- [NeMo Speech 3.0 on PyPI](https://pypi.org/project/nemo-toolkit/3.0.0/) — lacks RoPE support
+- [NVIDIA-NeMo/Speech main](https://github.com/NVIDIA-NeMo/Speech) — pinned RoPE-capable source build
 - [gchhablani/wav2vec2-large-xlsr-gu](https://huggingface.co/gchhablani/wav2vec2-large-xlsr-gu)
 - [MahmoudAshraf/mms-300m-1130-forced-aligner](https://huggingface.co/MahmoudAshraf/mms-300m-1130-forced-aligner)
 - [ctc-forced-aligner source](https://github.com/MahmoudAshraf97/ctc-forced-aligner)

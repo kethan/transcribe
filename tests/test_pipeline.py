@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
@@ -19,6 +22,7 @@ from gujarati_pipeline.audio import SAMPLE_RATE, plan_spans, read_pcm16_wav, wri
 from gujarati_pipeline.bodhan import canonical_text, parse_bodhan_response
 from gujarati_pipeline.config import Config
 from gujarati_pipeline.ctc import append_star_column, ctc_forced_align, labels_from_path, word_spans_from_path
+from gujarati_pipeline.diarization import nemo_rope_support
 from gujarati_pipeline.transcription import (
     HF_ASR_INFERENCE_FILES,
     CloudBodhanTranscriber,
@@ -421,6 +425,26 @@ class LocalBodhanHFTests(unittest.TestCase):
 
             with self.assertRaises(TranscriptionError):
                 transcriber.transcribe([span])
+
+
+class NeMoRoPeSupportTests(unittest.TestCase):
+    MODULE = "nemo.collections.asr.modules.transformer_encoder"
+
+    def test_detects_pypi_3_0_0_without_rope(self):
+        fake = types.ModuleType(self.MODULE)
+        fake._SUPPORTED_SELF_ATTENTION_MODELS = ("abs_pos", "rel_pos", "no_pos")
+        with mock.patch.dict(sys.modules, {self.MODULE: fake}):
+            supported, note = nemo_rope_support()
+        self.assertFalse(supported)
+        self.assertIn("abs_pos", note)
+
+    def test_detects_pinned_main_build_with_rope(self):
+        fake = types.ModuleType(self.MODULE)
+        fake._SUPPORTED_SELF_ATTENTION_MODELS = ("abs_pos", "rel_pos", "no_pos", "rope")
+        with mock.patch.dict(sys.modules, {self.MODULE: fake}):
+            supported, note = nemo_rope_support()
+        self.assertTrue(supported)
+        self.assertIn("rope", note)
 
 
 if __name__ == "__main__":

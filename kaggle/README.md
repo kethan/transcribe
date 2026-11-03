@@ -2,8 +2,9 @@
 
 This folder exists to answer one question: **“which file do I run on Kaggle?”**
 
-Use **`kaggle/transcribe.ipynb`**. It has one code cell. You do not need to
-understand `gujarati_pipeline/`, `tools/`, `docs/`, or `tests/` to run it.
+Use **`kaggle/transcribe.ipynb`**. It has two code cells: a GPU diagnostic and
+the main runner. You do not need to understand `gujarati_pipeline/`, `tools/`,
+`docs/`, or `tests/` to run it.
 
 ## Before you run
 
@@ -18,14 +19,19 @@ understand `gujarati_pipeline/`, `tools/`, `docs/`, or `tests/` to run it.
    - **Accelerator: GPU** — T4 or P100. A 75-minute MP3 on CPU is impractical.
    - Use the latest Python GPU image. The pinned NeMo 3.0 stack expects
      Python 3.12+ / PyTorch 2.7+; check the printed `torch` version after install.
-5. Run the single cell.
+5. **Run the GPU diagnostic cell first.** Require `nvidia-smi` success and
+   `torch.cuda.is_available() == True`. If not, fix the accelerator and
+   **restart the session** before continuing.
+6. Run the main cell.
 
-## What the cell does
+## What the main cell does
 
 It clones `arena/793a5a3b-transcribe` into `/kaggle/working/transcribe`,
-installs `requirements.txt` and `tools/requirements.txt`, checks your HF gate,
-uses the bundled `audio/*.mp3` and `audio/*.json`, runs `pipeline.py`, and
-writes everything to `/kaggle/working/transcribe_outputs/`.
+installs `requirements.txt` and `tools/requirements.txt` while pinning
+Kaggle's preinstalled CUDA `torch`/`torchaudio`, checks your HF gate, uses the
+bundled `audio/*.mp3` and `audio/*.json`, runs `pipeline.py`, and writes
+everything to `/kaggle/working/transcribe_outputs/`. It refuses to continue if
+`torch.cuda.is_available()` is false after installation.
 
 The first execution can take a long time: it downloads the ~4.9 GB Bodhan ASR
 checkpoint, the Nemotron diarization checkpoint, and the MMS alignment
@@ -34,7 +40,7 @@ ElevenLabs Scribe 2 reference.
 
 ## Only two values to edit
 
-At the top of the cell:
+At the top of the main cell:
 
 ```python
 ASR_LANGUAGE = "hi"          # "hi" for the bundled Hindi-heavy MP3
@@ -47,7 +53,7 @@ automatically because the attached reference belongs to the bundled audio.
 
 ## Output files
 
-After the cell finishes, open `/kaggle/working/transcribe_outputs/`:
+After the main cell finishes, open `/kaggle/working/transcribe_outputs/`:
 
 - `transcript.json` — real strict-schema pipeline output
 - `processing_report.json` / `.md`
@@ -62,11 +68,18 @@ before stopping the notebook.
 
 - `401` / `403` / “gated repo”: accept the license on the model page and make
   sure the Kaggle Secret belongs to the same HF account.
-- `torch.cuda.is_available() == False`: enable GPU in Settings and restart.
+- `torch.cuda.is_available() == False`: enable GPU in Settings, Internet On,
+  and restart. Kaggle restarts the session when the accelerator changes.
+- `Could not find cuda drivers ... cudart_stub.cc`: this specific message often
+  comes from **TensorFlow**, not PyTorch. Run the diagnostic cell and trust
+  `torch.cuda.is_available()`. The notebook sets `USE_TF=0` and
+  `TF_CPP_MIN_LOG_LEVEL=3` to keep that warning out of the way.
+- `nvidia-smi` works but `torch.version.cuda is None`: a CPU-only PyTorch wheel
+  was installed. **Restart the notebook** to restore Kaggle's CUDA image, then
+  re-run; the main cell now writes `/kaggle/working/torch_constraints.txt` and
+  uses `pip -c` so it cannot swap the CUDA `torch`/`torchaudio` pair.
 - `ffmpeg MISSING`: the MP3 cannot be converted to canonical WAV. Use a WAV
   input or install/enable ffmpeg in the Kaggle image.
-- `pip` replaces Kaggle's CUDA-enabled PyTorch with a CPU build: stop and install
-  the missing packages individually rather than forcing a new `torch` wheel.
 - Out of disk: Kaggle gives 20 GB under `/kaggle/working`; the three checkpoints
   plus the MP3 and intermediate WAVs can be tight. Use `HF_HOME` on scratch space
   or a shorter clip for a first smoke test.

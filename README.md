@@ -24,9 +24,10 @@ meeting recording into the exact requested `segments[].words[]` JSON:
 
 ## Kaggle: easiest path
 
-Use **[`kaggle/transcribe.ipynb`](kaggle/transcribe.ipynb)**. It is a one-cell
-notebook: it clones this branch, installs the dependencies, checks your
-`HF_TOKEN`, runs the bundled MP3, and writes all outputs to
+Use **[`kaggle/transcribe.ipynb`](kaggle/transcribe.ipynb)**. It has two cells:
+a GPU diagnostic and a main runner. The main cell clones this branch, installs
+the dependencies while preserving Kaggle's CUDA `torch`/`torchaudio`, checks
+your `HF_TOKEN`, runs the bundled MP3, and writes all outputs to
 `/kaggle/working/transcribe_outputs/`. See [`kaggle/README.md`](kaggle/README.md)
 for the four Kaggle settings (GPU, Internet, Secret, import notebook). You do
 not need to understand the other files to run it.
@@ -88,6 +89,9 @@ requirements.txt       pinned Python dependencies
 NeMo Speech 3.0 requires **Python 3.12 or later** and **PyTorch 2.7+**. Use a
 Python 3.12+ GPU Kaggle image / container. Kaggle normally ships a matching
 CUDA-enabled `torch`; verify it rather than replacing it with a CPU wheel.
+`torchaudio` is deliberately unpinned so `pip` cannot force a newer `torch`
+that breaks that pair. The Kaggle notebook pins both packages with a generated
+constraints file.
 
 ```bash
 # System audio tools
@@ -97,7 +101,7 @@ apt-get -qq update && apt-get -qq install -y ffmpeg libsndfile1
 pip install -q --upgrade pip
 pip install -q "numpy>=1.26,<3" "requests>=2.32,<3" "uroman==1.3.1.1"
 pip install -q "huggingface_hub>=0.34,<2" "sentencepiece>=0.2,<0.3" "soundfile>=0.12,<0.14"
-pip install -q "torchaudio>=2.7" "transformers==4.57.6"
+pip install -q "torchaudio" "transformers==4.57.6"
 pip install -q "Cython" "packaging"
 pip install -q "nemo-toolkit[asr]==3.0.0"
 

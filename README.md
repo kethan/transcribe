@@ -37,6 +37,25 @@ references to `/kaggle/working/transcribe_outputs/`. See
 for the four Kaggle settings (GPU, Internet, Secret, import notebook). You do
 not need to understand the other files to run it.
 
+## CPU-only laptop path (plain text, no diarization)
+
+If you only need a transcript on a 16 GB Intel i7 laptop, use
+[`laptop/README.md`](laptop/README.md). It runs a separate, small
+[`laptop/transcribe.py`](laptop/transcribe.py): downloads a pinned INT8 ONNX
+KV-cache derivative of `bodhan-ai/indic-transcribe-core`, decodes audio to
+16 kHz mono, splits it at quiet points into ≤28 s windows, greedily decodes
+with ONNX Runtime CPU, and writes plain UTF-8 text plus a provenance JSON.
+There is no NeMo, CTC alignment, diarization, word timestamps, strict
+`transcript.json`, cloud key, or GPU requirement. Hindi is the default.
+
+It uses the faster KV-cache community derivative rather than the exact linked
+no-cache ONNX port. **Exact accuracy parity with the Bodhan cloud API is not
+guaranteed**: INT8 quantization, chunking, feature extraction, and greedy
+decoding can change words. [`laptop/compare.py`](laptop/compare.py) computes
+WER/CER against a saved cloud response or a manually corrected reference; it
+does not call the cloud API. Keep the Kaggle pipeline above if you need speaker
+turns and word timestamps.
+
 ## What was verified before coding (summary)
 
 1. **Local Bodhan HF model (default):** `bodhan-ai/indic-transcribe-core` is a

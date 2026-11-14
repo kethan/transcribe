@@ -12,3 +12,9 @@ intermediates/
 # Kaggle / notebook scratch
 .kaggle/
 .ipynb_checkpoints/
+
+# Local CPU ASR weights; laptop/transcribe.py defaults to ~/.cache instead.
+laptop/models/
+*.onnx
+*.onnx.data
+*.gguf

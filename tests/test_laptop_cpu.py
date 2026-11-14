@@ -70,17 +70,12 @@ class LaptopCpuTests(unittest.TestCase):
     def test_canary_prompt_matches_the_documented_token_ids(self) -> None:
         vocab = [""] * 200
         vocab[89] = "<|hi|>"
-        vocab[66] = "<|en|>"
         self.assertEqual(
-            transcribe.build_prompt(vocab, "hi", "native", "yes"),
+            transcribe.build_prompt(vocab, "hi"),
             [7, 4, 18, 89, 89, 5, 9, 11, 13, 15],
         )
-        self.assertEqual(
-            transcribe.build_prompt(vocab, "hi", "mixed", "no"),
-            [7, 4, 18, 89, 89, 6, 8, 11, 13, 15],
-        )
         with self.assertRaises(ValueError):
-            transcribe.build_prompt(vocab, "zz", "native", "yes")
+            transcribe.build_prompt(vocab, "zz")
 
     def test_detokenize_filters_special_tokens(self) -> None:
         vocab = [""] * 7_152
@@ -102,14 +97,12 @@ class LaptopCpuTests(unittest.TestCase):
             * np.sin(2 * np.pi * 440 * np.arange(sr) / sr)
         ).astype(np.float32)
         audio = np.concatenate([silence, tone, silence, tone])
-        frame_duration = transcribe.FRAME_SAMPLES / sr
+        frame_duration = transcribe.FRAME / sr
 
         chunks, threshold = transcribe.plan_chunks(
             audio,
             max_seconds=1.5,
-            min_seconds=0.5,
             search_seconds=0.5,
-            silence_threshold=0.0,
         )
 
         self.assertGreater(threshold, 0.0)
@@ -135,11 +128,10 @@ class LaptopCpuTests(unittest.TestCase):
         )
 
     def test_model_files_are_pinned_and_have_checksums(self) -> None:
-        self.assertEqual(len(transcribe.MODEL_REVISION), 40)
-        for name in transcribe.REQUIRED_MODEL_FILES:
-            self.assertIn(name, transcribe.EXPECTED_SHA256)
-            self.assertEqual(len(transcribe.EXPECTED_SHA256[name]), 64)
-        self.assertIn("SHA256SUMS", transcribe.DOWNLOAD_FILES)
+        self.assertEqual(len(transcribe.REVISION), 40)
+        for name in transcribe.FILES:
+            self.assertIn(name, transcribe.HASHES)
+            self.assertEqual(len(transcribe.HASHES[name]), 64)
 
     def test_normalize_text_and_rates(self) -> None:
         self.assertEqual(
@@ -195,7 +187,7 @@ class LaptopCpuTests(unittest.TestCase):
 
         def decoder_run(feed: dict[str, np.ndarray]) -> list[np.ndarray]:
             state["calls"] += 1
-            chosen = 1200 if state["calls"] == 1 else transcribe.EOS_ID
+            chosen = 1200 if state["calls"] == 1 else transcribe.EOS
             cache_length = feed["past_self_key.0"].shape[2]
             new_length = cache_length + feed["input_ids"].shape[1]
             logits = np.full(
@@ -232,19 +224,19 @@ class LaptopCpuTests(unittest.TestCase):
         asr.vocab = vocab
         asr.prompt = [7, 4, 18, 89, 89, 5, 9, 11, 13, 15]
         asr.max_new_tokens = 512
-        asr.past_input_names = {
+        asr.past_names = [
             f"past_self_{kind}.{layer}"
             for layer in range(transcribe.LAYERS)
             for kind in ("key", "value")
-        }
-        asr.cross_input_names = set(cross_outputs)
+        ]
+        asr.cross_names = list(cross_outputs)
 
         original = transcribe.mel_features
         transcribe.mel_features = lambda _samples: np.zeros(
             (1, 128, 64), dtype=np.float32
         )
         try:
-            text, token_ids, truncated = asr.decode_array(
+            text, token_ids, truncated = asr.decode(
                 np.zeros(transcribe.SAMPLE_RATE, dtype=np.float32)
             )
         finally:

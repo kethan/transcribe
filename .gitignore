@@ -1,0 +1,23 @@
+# Generated pipeline artifacts (keep the repository source clean)
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+work/
+outputs/
+intermediates/
+*.log
+
+# Kaggle / notebook scratch
+.kaggle/
+.ipynb_checkpoints/
+
+# Local CPU ASR weights; laptop/transcribe.py defaults to ~/.cache instead.
+laptop/models/
+laptop-node/node_modules/
+laptop-node/models/
+laptop-node/release/
+*.onnx
+*.onnx.data
+*.gguf

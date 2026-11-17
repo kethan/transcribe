@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { decodeAudio, planChunks } from '../src/audio.js';
 import { melFeatures } from '../src/features.js';
+import { detectRepetitionLoop } from '../src/inference.js';
 
 function pcmWav(samples, sampleRate = 16000) {
   const dataBytes = samples.length * 2;
@@ -40,6 +41,13 @@ test('mel features have the ONNX shape and finite normalized values', () => {
     for (let t = 0; t < 101; t++) mean += features.data[m * 101 + t];
     assert.ok(Math.abs(mean / 101) < 1e-4);
   }
+});
+
+test('repetition guard detects decoder loops without stripping a single repeated phrase', () => {
+  assert.equal(detectRepetitionLoop([1, 2, 1, 2, 1, 2]), null);
+  assert.equal(detectRepetitionLoop([1, 2, 1, 2, 1, 2, 1, 2])?.period, 2);
+  assert.equal(detectRepetitionLoop([7, 7, 7, 7, 7, 7, 7, 7])?.trimTo, 2);
+  assert.equal(detectRepetitionLoop([1, 2, 1, 2]), null);
 });
 
 test('WAV decoder and resampler produce 16 kHz mono float samples', async () => {

@@ -2,7 +2,7 @@
 
 A small command-line CPU transcription app for Windows x64 using Bodhan Indic-Transcribe-Core weights in INT8 ONNX format. The inference code uses ONNX Runtime Web's WebAssembly CPU provider, so it does not require Python, CUDA, or a separately installed native ONNX Runtime. The supplied model files are pinned and SHA-256 verified.
 
-**Status:** the Node app, audio decoding, feature extraction, chunking, model-file verification, and ONNX Runtime WASM int8-operator smoke test are implemented. Unit tests pass; JS mel features matched the existing Python/librosa frontend on a one-second tone (maximum absolute difference about 6.3e-5). Full speech inference has **not** been run here because the 1.57 GB ONNX model files are not in the repository. WASM CPU speed and accuracy on the user's Intel laptop are not yet measured.
+**Status:** the Node app, audio decoding, feature extraction, chunking, model-file verification, and ONNX Runtime WASM int8-operator smoke test are implemented. A decoder-loop guard now stops repeated token/phrase cycles and flags affected chunks in the console and provenance JSON; this prevents runaway repeated text but cannot restore missing words or guarantee accuracy. Unit tests pass; JS mel features matched the existing Python/librosa frontend on a one-second tone (maximum absolute difference about 6.3e-5). Full speech inference has **not** been run here because the 1.57 GB ONNX model files are not in the repository. WASM CPU speed and accuracy on the user's Intel laptop are not yet measured.
 
 ## Run with Node.js available
 

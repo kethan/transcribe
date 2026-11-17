@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { decodeAudio, planChunks } from '../src/audio.js';
 import { melFeatures } from '../src/features.js';
-import { detectRepetitionLoop } from '../src/inference.js';
+import { chooseTokenWithLoopGuard, detectRepetitionLoop } from '../src/inference.js';
 
 function pcmWav(samples, sampleRate = 16000) {
   const dataBytes = samples.length * 2;
@@ -46,8 +46,22 @@ test('mel features have the ONNX shape and finite normalized values', () => {
 test('repetition guard detects decoder loops without stripping a single repeated phrase', () => {
   assert.equal(detectRepetitionLoop([1, 2, 1, 2, 1, 2]), null);
   assert.equal(detectRepetitionLoop([1, 2, 1, 2, 1, 2, 1, 2])?.period, 2);
-  assert.equal(detectRepetitionLoop([7, 7, 7, 7, 7, 7, 7, 7])?.trimTo, 2);
+  assert.equal(detectRepetitionLoop([7, 7, 7, 7, 7, 7, 7, 7])?.cycles, 8);
   assert.equal(detectRepetitionLoop([1, 2, 1, 2]), null);
+});
+
+test('loop guard chooses a non-looping alternative instead of cutting the chunk', () => {
+  const history = [5, 6, 5, 6, 5, 6, 5];
+  const choice = chooseTokenWithLoopGuard({ dims: [1, 9], data: Float32Array.from([0, 1, 0, 0, 0, 0, 10, 0, 9]) }, history);
+  assert.equal(choice.token, 8);
+  assert.equal(choice.loopDetected, true);
+  assert.equal(choice.loopPeriod, 2);
+  assert.equal(choice.suppressedCount, 1);
+});
+
+test('loop guard leaves EOS and PAD alone when they are the greedy next token', () => {
+  const logits = { dims: [1, 4], data: Float32Array.from([0, 0, 10, 9]) };
+  assert.equal(chooseTokenWithLoopGuard(logits, [5, 6]).token, 2);
 });
 
 test('WAV decoder and resampler produce 16 kHz mono float samples', async () => {

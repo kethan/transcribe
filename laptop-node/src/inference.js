@@ -17,14 +17,15 @@ function buildPrompt(vocab, language) {
   return [7, 4, 18, langId, langId, 5, 9, 11, 13, 15];
 }
 
-function argmaxLastLogits(tensor) {
+function argmaxLastLogits(tensor, banned = new Set()) {
   const data = tensor.data;
   const dims = tensor.dims;
   const vocabSize = dims[dims.length - 1];
   const start = data.length - vocabSize;
-  let bestIndex = 0;
+  let bestIndex = -1;
   let bestValue = -Infinity;
   for (let i = 0; i < vocabSize; i++) {
+    if (banned.has(i)) continue;
     const value = data[start + i];
     if (value > bestValue) { bestValue = value; bestIndex = i; }
   }
@@ -37,8 +38,8 @@ function detokenize(vocab, ids) {
     .join('').replaceAll('\u2581', ' ').trim();
 }
 
-// Greedy speech decoding can collapse into a repeated token/phrase. Stop the
-// chunk and preserve an explicit warning instead of writing hundreds of copies.
+// Detect a repeated suffix cycle so the decoder can reject the greedy token
+// that would extend it before it becomes an unbounded loop.
 export function detectRepetitionLoop(ids, maxPeriod = 16) {
   const limit = Math.min(maxPeriod, Math.floor(ids.length / 3));
   for (let period = 1; period <= limit; period++) {
@@ -59,9 +60,33 @@ export function detectRepetitionLoop(ids, maxPeriod = 16) {
       if (matches) { primitive = false; break; }
     }
     if (!primitive) continue;
-    return { period, cycles, trimTo: ids.length - (cycles - 2) * period };
+    return { period, cycles };
   }
   return null;
+}
+
+export function chooseTokenWithLoopGuard(logits, history) {
+  const greedy = argmaxLastLogits(logits);
+  if (greedy < 0 || greedy === EOS || greedy === PAD) {
+    return { token: greedy, loopDetected: false, loopPeriod: null, suppressedCount: 0 };
+  }
+  const firstLoop = detectRepetitionLoop([...history, greedy]);
+  if (!firstLoop) return { token: greedy, loopDetected: false, loopPeriod: null, suppressedCount: 0 };
+
+  // Reject only candidate tokens that would extend the detected cycle, then
+  // continue with the next-highest logit. If all viable candidates loop, stop
+  // and flag the chunk instead of silently writing an unbounded repetition.
+  const banned = new Set([greedy]);
+  while (banned.size < logits.dims.at(-1)) {
+    const alternative = argmaxLastLogits(logits, banned);
+    if (alternative < 0 || alternative === EOS || alternative === PAD) break;
+    const alternativeLoop = detectRepetitionLoop([...history, alternative]);
+    if (!alternativeLoop) {
+      return { token: alternative, loopDetected: true, loopPeriod: firstLoop.period, suppressedCount: banned.size };
+    }
+    banned.add(alternative);
+  }
+  return { token: null, loopDetected: true, loopPeriod: firstLoop.period, suppressedCount: banned.size };
 }
 
 export class OnnxTranscriber {
@@ -104,35 +129,39 @@ export class OnnxTranscriber {
       ...crossFeed,
     };
     let output = await this.decoder.run(feed);
-    let next = argmaxLastLogits(output.logits);
     const tokens = [];
-    let truncated = false;
-    let loop = null;
-    let stopReason = 'eos';
-    while (next !== EOS && next !== PAD) {
+    let choice = chooseTokenWithLoopGuard(output.logits, tokens);
+    let truncated = choice.token === null;
+    let loopDetected = choice.loopDetected;
+    let loopPeriod = choice.loopPeriod;
+    let suppressedCount = choice.suppressedCount;
+    let stopReason = choice.token === null ? 'repetition_loop_unrecoverable' : 'eos';
+    let next = choice.token;
+    while (next !== null && next !== EOS && next !== PAD) {
       if (tokens.length >= this.maxNewTokens) { truncated = true; stopReason = 'max_new_tokens'; break; }
       tokens.push(next);
-      loop = detectRepetitionLoop(tokens);
-      if (loop) {
-        tokens.length = loop.trimTo;
-        truncated = true;
-        stopReason = 'repetition_loop';
-        break;
-      }
       const nextFeed = { input_ids: new ort.Tensor('int64', BigInt64Array.of(BigInt(next)), [1, 1]), ...crossFeed };
       for (let layer = 0; layer < LAYERS; layer++) {
         nextFeed[`past_self_key.${layer}`] = output[`present_self_key.${layer}`];
         nextFeed[`past_self_value.${layer}`] = output[`present_self_value.${layer}`];
       }
       output = await this.decoder.run(nextFeed);
-      next = argmaxLastLogits(output.logits);
+      choice = chooseTokenWithLoopGuard(output.logits, tokens);
+      next = choice.token;
+      if (choice.loopDetected) {
+        loopDetected = true;
+        loopPeriod ??= choice.loopPeriod;
+        suppressedCount += choice.suppressedCount;
+      }
+      if (next === null) { truncated = true; stopReason = 'repetition_loop_unrecoverable'; }
     }
     return {
       text: detokenize(this.vocab, tokens),
       tokenCount: tokens.length,
       truncated,
-      loopDetected: Boolean(loop),
-      loopPeriod: loop?.period ?? null,
+      loopDetected,
+      loopPeriod,
+      suppressedCount,
       stopReason,
     };
   }
@@ -144,11 +173,17 @@ export async function transcribeFile(transcriber, audioPath, audio, chunks, outp
     const chunk = chunks[i];
     console.error(`[${String(i + 1).padStart(3, '0')}/${String(chunks.length).padStart(3, '0')}] ${chunk.start.toFixed(2)}–${chunk.end.toFixed(2)}s`);
     const decoded = await transcriber.decode(audio.subarray(chunk.startSample, chunk.endSample));
-    if (decoded.loopDetected) console.error(`  WARNING: repetition loop detected; stopped this chunk early (period ${decoded.loopPeriod}). Review this segment.`);
+    if (decoded.loopDetected) {
+      const detail = decoded.stopReason === 'repetition_loop_unrecoverable'
+        ? 'no safe alternative token was available; this chunk was cut short'
+        : `blocked ${decoded.suppressedCount} loop candidate(s) and continued`;
+      console.error(`  WARNING: repetition loop (period ${decoded.loopPeriod}); ${detail}. Review this segment.`);
+    }
     entries.push({ ...chunk, index: i + 1, ...decoded });
   }
   const text = entries.map((entry) => entry.text).filter(Boolean).join(' ');
   const loopChunks = entries.filter((entry) => entry.loopDetected).map((entry) => entry.index);
+  const unrecoverableLoopChunks = entries.filter((entry) => entry.stopReason === 'repetition_loop_unrecoverable').map((entry) => entry.index);
   const truncatedChunks = entries.filter((entry) => entry.stopReason === 'max_new_tokens').map((entry) => entry.index);
   const payload = {
     model: { id: MODEL_ID, revision: REVISION, source: 'bodhan-ai/indic-transcribe-core', format: 'INT8 ONNX with KV-cache decoder', runtime: `ONNX Runtime Web ${ort.env.versions?.web ?? 'unknown'} (WASM CPU)`, accuracyNote: 'No measured parity with the Bodhan cloud API.' },
@@ -156,10 +191,11 @@ export async function transcribeFile(transcriber, audioPath, audio, chunks, outp
     language, prompt: transcriber.prompt, text,
     chunks: entries,
     warnings: [
-      ...(loopChunks.length ? [`Decoder repetition guard stopped chunks: ${loopChunks.join(', ')}. Review those transcript segments.`] : []),
+      ...(loopChunks.length ? [`Repetition guard changed the greedy token choice in chunks: ${loopChunks.join(', ')}. Review those segments; this may alter wording.`] : []),
+      ...(unrecoverableLoopChunks.length ? [`No non-looping token was available; chunks ended early: ${unrecoverableLoopChunks.join(', ')}.`] : []),
       ...(truncatedChunks.length ? [`Maximum token limit reached in chunks: ${truncatedChunks.join(', ')}.`] : []),
     ],
-    notes: ['Transcript is generated by ONNX inference; no transcript is hardcoded.', 'CPU-only path: no cloud calls, GPU, Python, NeMo, or diarization.', 'Repeated token/phrase loops are cut early and flagged; this limits runaway output but does not ensure transcript accuracy.'],
+    notes: ['Transcript is generated by ONNX inference; no transcript is hardcoded.', 'CPU-only path: no cloud calls, GPU, Python, NeMo, or diarization.', 'The repetition guard selects a lower-ranked token when greedy decoding enters a detected loop; it can change words and does not ensure transcript accuracy.'],
   };
   const { mkdir, writeFile } = await import('node:fs/promises');
   const { dirname, resolve } = await import('node:path');

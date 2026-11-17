@@ -186,9 +186,9 @@ export async function transcribeFile(transcriber, audioPath, audio, chunks, outp
   const unrecoverableLoopChunks = entries.filter((entry) => entry.stopReason === 'repetition_loop_unrecoverable').map((entry) => entry.index);
   const truncatedChunks = entries.filter((entry) => entry.stopReason === 'max_new_tokens').map((entry) => entry.index);
   const payload = {
-    model: { id: MODEL_ID, revision: REVISION, source: 'bodhan-ai/indic-transcribe-core', format: 'INT8 ONNX with KV-cache decoder', runtime: `ONNX Runtime Web ${ort.env.versions?.web ?? 'unknown'} (WASM CPU)`, accuracyNote: 'No measured parity with the Bodhan cloud API.' },
+    model: transcriber.modelMetadata ?? { id: MODEL_ID, revision: REVISION, source: 'bodhan-ai/indic-transcribe-core', format: 'INT8 ONNX with KV-cache decoder', runtime: `ONNX Runtime Web ${ort.env.versions?.web ?? 'unknown'} (WASM CPU)`, accuracyNote: 'No measured parity with the Bodhan cloud API.' },
     audio: { path: audioPath, sha256: await sha256File(audioPath), sampleRate: 16000, durationSeconds: Number((audio.length / 16000).toFixed(6)) },
-    language, prompt: transcriber.prompt, text,
+    language, mode: transcriber.mode ?? 'native', prompt: transcriber.prompt, text,
     chunks: entries,
     warnings: [
       ...(loopChunks.length ? [`Repetition guard changed the greedy token choice in chunks: ${loopChunks.join(', ')}. Review those segments; this may alter wording.`] : []),

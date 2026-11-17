@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { polyphase } from '@audio/resample';
+import { torchaudioSincResample } from './torchaudio-resample.js';
 import { FLACDecoder } from '@wasm-audio-decoders/flac';
 import { MPEGDecoder } from 'mpg123-decoder';
 import WavDecoder from 'wav-decoder';
@@ -41,7 +42,7 @@ async function decodeFileBytes(filePath, bytes) {
   throw new Error(`Unsupported audio extension .${ext}; use WAV, MP3, or FLAC.`);
 }
 
-export async function decodeAudio(filePath) {
+export async function decodeAudio(filePath, { resampler = 'polyphase' } = {}) {
   const bytes = await readFile(filePath);
   if (!bytes.length) throw new Error('Audio file is empty.');
   const decoded = await decodeFileBytes(filePath, bytes);
@@ -56,7 +57,9 @@ export async function decodeAudio(filePath) {
   }
   if (mono.some((sample) => !Number.isFinite(sample))) throw new Error('Audio contains invalid samples.');
   if (decoded.sampleRate === RATE) return mono;
-  const resampled = polyphase(mono, { from: decoded.sampleRate, to: RATE });
+  const resampled = resampler === 'indic-canary'
+    ? torchaudioSincResample(mono, decoded.sampleRate, RATE)
+    : polyphase(mono, { from: decoded.sampleRate, to: RATE });
   if (!resampled.length || resampled.some((sample) => !Number.isFinite(sample))) {
     throw new Error('Audio resampling failed.');
   }

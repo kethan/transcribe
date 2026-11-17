@@ -1,8 +1,8 @@
 # Bodhan Offline Transcriber (Node.js + ONNX)
 
-A small command-line CPU transcription app for Windows x64 using Bodhan Indic-Transcribe-Core weights in INT8 ONNX format. The inference code uses ONNX Runtime Web's WebAssembly CPU provider, so it does not require Python, CUDA, or a separately installed native ONNX Runtime. The supplied model files are pinned and SHA-256 verified.
+A command-line CPU transcription app for Windows x64. It has the original INT8 ONNX/WASM path and an experimental FP32 ONNX/native-CPU path for Indic-Transcribe-Core. Neither path requires Python at runtime. The FP32 export is gated and must be downloaded separately by a user who has accepted its terms.
 
-**Status:** the Node app, audio decoding, feature extraction, chunking, model-file verification, and ONNX Runtime WASM int8-operator smoke test are implemented. A decoder-loop guard now blocks a token that would extend a repeated cycle and continues with the next-highest logit; it flags affected chunks in the console and provenance JSON. If no safe alternative exists, it ends that chunk. This can change wording and cannot recover missing words or guarantee accuracy. Unit tests pass; JS mel features matched the existing Python/librosa frontend on a one-second tone (maximum absolute difference about 6.3e-5). Full speech inference has **not** been run here because the 1.57 GB ONNX model files are not in the repository. WASM CPU speed and accuracy on the user's Intel laptop are not yet measured.
+**Status:** audio decoding, chunking, the original INT8 path, FP32 vocabulary/safetensors parsing, and a JavaScript port of the FP32 frontend are implemented. Eleven Node tests pass, including a tiny native ONNX Runtime CPU graph. The FP32 path has **not** been tested with the speech model weights or compared with reference transcripts, so it is not yet a verified working transcription path and no transcript-quality improvement is claimed. Windows packaging and inference on the user's laptop also remain unverified. A repetition-loop guard can alter token choices and is not an accuracy fix.
 
 ## Run with Node.js available
 
@@ -18,6 +18,37 @@ npm start -- "C:\Audio\meeting.mp3" --language hi --output "C:\Audio\transcript.
 `--download-model` is the only command that accesses the network. It downloads the pinned four-file model from Hugging Face and checks every SHA-256. Transcription itself does not make network requests. You can instead place the four files in `models\bodhan-core-int8-kv` or pass `--model-dir`.
 
 Inputs: WAV, MP3, and FLAC. Bundled JavaScript/WebAssembly decoders and a polyphase resampler convert audio to 16 kHz mono; no FFmpeg executable is needed. Default language is Hindi (`hi`); use `--help` for the supported language codes and options. Output is UTF-8 plain text plus provenance JSON; no diarization, timestamps, or cloud comparison is included.
+
+## Experimental FP32 ONNX route
+
+This route uses the gated `hari31416/indic-transcribe-onnx-fp32` export and native ONNX Runtime CPU. The pipeline was ported from the uploaded reference frontend and runner, but is not yet validated against the ONNX graphs or reference transcripts. Use the [pinned model revision](https://huggingface.co/hari31416/indic-transcribe-onnx-fp32/tree/d9450f0550e9a4dfbded6082be9ba3c7411137cc) for matching vocabulary/frontend files.
+
+After accepting the model terms, download these files from the model repository into `laptop-node/models/indic-transcribe-core-fp32/`:
+
+- `encoder-model.onnx` and `encoder-model.onnx.data`
+- `decoder-model.onnx` and `decoder-model.onnx.data`
+- `config.json`, `vocab.txt`, and `feature_extractor.safetensors`
+
+The safetensors reader also accepts the uploaded attachment name `feature_extractor.safetensors.txt`; it parses the original binary safetensors bytes, not a text conversion. The frontend asset supplied for development is kept in the ignored local model directory and is not included in Git. Do not rename or edit the ONNX external-data sidecars.
+
+On a Windows x64 machine with internet access, install the native runtime once and try a short clip:
+
+```powershell
+cd laptop-node
+npm ci
+node src/cli.js "C:\Audio\short-clip.mp3" --model-format fp32 --language hi --mode native
+```
+
+Then the app can run offline from the local model directory. FP32 is not downloaded automatically because the repository is gated; `--download-model` remains for the separate public INT8 model only. For this community export the publisher estimates roughly 4.59 GB of storage and about 5.15 GB peak inference RAM; leave extra disk/RAM headroom. Those figures are publisher estimates, not measurements from this app. Native-runtime installation and real inference still need verification on Windows.
+
+To package this route for an offline Windows x64 laptop, after all model files and native runtime dependencies are present:
+
+```powershell
+npm ci --omit=dev
+.\package-portable.ps1 -ModelFormat fp32
+```
+
+This copies the FP32 model, Node runtime, app, and Node modules into the portable folder/ZIP. The resulting archive is several gigabytes. This packaging route has not yet been run on Windows.
 
 ## Portable Windows folder / ZIP (no Python or installed Node on the target)
 
@@ -40,7 +71,7 @@ The transfer includes the runtime and model, so the destination needs no Python,
 
 ## Hardware / performance notes
 
-This is CPU-only and uses WebAssembly rather than the faster native ONNX Runtime CPU provider. Four threads are used by default (`--threads 2` can reduce heat/memory pressure). WASM has a different speed/memory profile; do not assume the prior Python/native ONNX timings apply. Try a short clip first. Long recordings are split into contiguous chunks of up to 28 seconds.
+Both paths are CPU-only. The existing INT8 path uses WebAssembly; the experimental FP32 path uses native ONNX Runtime CPU. Four threads are used by default (`--threads 2` can reduce heat/memory pressure). Their speed and memory profiles differ; do not assume Python/native timings apply to the WASM route. Try a short clip first. Long recordings are split into contiguous chunks of up to 28 seconds.
 
 The model is a community INT8/KV-cache derivative, not Bodhan's cloud service. There is no measured parity with the cloud API or benchmark on the target laptop. Keep a human review for important transcripts.
 
@@ -51,7 +82,7 @@ Model attribution:
 > Built with Indic-Transcribe-Core from Bodhan AI / AI4Bharat.<br>
 > Base model: Canary-1B-v2 developed by NVIDIA Corporation (CC-BY-4.0).
 
-Review the model repository's Indic Open Model License and usage terms before redistribution. `onnxruntime-web`, `fft.js`, `wav-decoder`, `@audio/resample`, and the decoder packages declare MIT licenses. Review the model repository's separate terms before redistribution. This is not legal advice.
+Review the model repository's Indic Open Model License and usage terms before redistribution. `onnxruntime-web`, `onnxruntime-node`, `fft.js`, `wav-decoder`, `@audio/resample`, and the decoder packages declare MIT licenses. Review each model/runtime's terms before redistribution. This is not legal advice.
 
 ## Development checks
 

@@ -15,6 +15,9 @@ intermediates/
 
 # Local CPU ASR weights; laptop/transcribe.py defaults to ~/.cache instead.
 laptop/models/
+laptop-node/node_modules/
+laptop-node/models/
+laptop-node/release/
 *.onnx
 *.onnx.data
 *.gguf

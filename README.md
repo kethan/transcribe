@@ -56,6 +56,15 @@ WER/CER against a saved cloud response or a manually corrected reference; it
 does not call the cloud API. Keep the Kaggle pipeline above if you need speaker
 turns and word timestamps.
 
+### Node.js portable app (no Python on the target)
+
+[`laptop-node/README.md`](laptop-node/README.md) contains a Node.js CLI using
+ONNX Runtime Web's CPU/WebAssembly provider. It includes WAV/MP3/FLAC decoding,
+INT8 model checksum verification, and a Windows packaging script that bundles
+Node, dependencies, and model files for offline transfer. It has **not** yet
+been run end-to-end with the full 1.57 GB model or benchmarked on the target
+i7 laptop; build the Windows ZIP on a Windows x64 machine with Node.js 20/22.
+
 ## What was verified before coding (summary)
 
 1. **Local Bodhan HF model (default):** `bodhan-ai/indic-transcribe-core` is a
